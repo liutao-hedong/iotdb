@@ -25,124 +25,184 @@ import org.apache.iotdb.rpc.StatementExecutionException;
 import org.apache.iotdb.session.pool.SessionPool;
 import org.apache.iotdb.tsfile.file.metadata.enums.TSDataType;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.Random;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class SessionPoolExample {
 
   private static SessionPool sessionPool;
-  private static ExecutorService service;
+
+  private static final Logger LOGGER = LoggerFactory.getLogger(SessionPoolExample.class);
+
+  private static int ROW_NUMBER = 100;
+  private static int THREAD_NUMBER = 100;
+
+  private static int DEVICE_NUMBER = 20000;
+
+  private static int SENSOR_NUMBER = 500;
+
+  private static int WRITE_NUMBER = 10000;
+
+  private static List<String> measurements;
+
+  private static List<TSDataType> types;
+
+  private static AtomicInteger total = new AtomicInteger();
+
+  private static Random r;
 
   /** Build a custom SessionPool for this example */
-  private static void constructCustomSessionPool() {
-    sessionPool =
-        new SessionPool.Builder()
-            .host("127.0.0.1")
-            .port(6667)
-            .user("root")
-            .password("root")
-            .maxSize(3)
-            .build();
-  }
 
   /** Build a redirect-able SessionPool for this example */
   private static void constructRedirectSessionPool() {
     List<String> nodeUrls = new ArrayList<>();
-    nodeUrls.add("127.0.0.1:6667");
-    nodeUrls.add("127.0.0.1:6668");
+    nodeUrls.add("10.24.58.58:6667");
+    nodeUrls.add("10.24.58.67:6667");
+    nodeUrls.add("10.24.58.69:6667");
     sessionPool =
         new SessionPool.Builder()
             .nodeUrls(nodeUrls)
             .user("root")
             .password("root")
-            .maxSize(3)
+            .maxSize(500)
             .build();
+    sessionPool.setFetchSize(10000);
   }
 
-  public static void main(String[] args)
-      throws StatementExecutionException, IoTDBConnectionException, InterruptedException {
+  public static void main(String[] args) throws InterruptedException {
     // Choose the SessionPool you going to use
     constructRedirectSessionPool();
 
-    service = Executors.newFixedThreadPool(10);
-    insertRecord();
-    queryByRowRecord();
+    measurements = new ArrayList<>();
+    types = new ArrayList<>();
+    for (int i = 0; i < SENSOR_NUMBER; i++) {
+      measurements.add("s_" + i);
+      types.add(TSDataType.FLOAT);
+    }
+
+    r = new Random();
+
+    Thread[] threads = new Thread[THREAD_NUMBER];
+    for (int i = 0; i < THREAD_NUMBER; i++) {
+      threads[i] =
+          new Thread(
+              () -> {
+                for (int j = 0; j < WRITE_NUMBER; j++) {
+                  long start = System.currentTimeMillis();
+                  try {
+                    insertRecords();
+                  } catch (Exception e) {
+                    LOGGER.error("insert error:", e);
+                  }
+                  LOGGER.info(
+                      "insert {} rows cost {} ms", ROW_NUMBER, System.currentTimeMillis() - start);
+                  LOGGER.info("Total rows number: {}", total.addAndGet(ROW_NUMBER));
+                }
+              });
+    }
     Thread.sleep(1000);
-    queryByIterator();
-    sessionPool.close();
-    service.shutdown();
+    Thread[] readThreads = new Thread[THREAD_NUMBER];
+    for (int i = 0; i < THREAD_NUMBER; i++) {
+      readThreads[i] =
+          new Thread(
+              () -> {
+                for (int j = 0; j < WRITE_NUMBER; j++) {
+                  try {
+                    queryByIterator();
+                  } catch (Exception e) {
+                    LOGGER.error("query error:", e);
+                  }
+                }
+              });
+    }
+    long startTime = System.currentTimeMillis();
+    for (Thread thread : threads) {
+      thread.start();
+    }
+    for (Thread thread : readThreads) {
+      thread.start();
+    }
+
+    Runtime.getRuntime()
+        .addShutdownHook(
+            new Thread(
+                () -> {
+                  sessionPool.close();
+                  System.out.println(System.currentTimeMillis() - startTime);
+                }));
+
+    long startTime1 = System.nanoTime();
+    new Thread(
+            () -> {
+              while (true) {
+                try {
+                  TimeUnit.MINUTES.sleep(1);
+                } catch (InterruptedException e) {
+                  throw new RuntimeException(e);
+                }
+                long currentTime = System.nanoTime();
+                LOGGER.info(
+                    "write rate: {} lines/minute",
+                    total.get() / ((currentTime - startTime1) / 60_000_000_000L));
+              }
+            })
+        .start();
   }
 
   // more insert example, see SessionExample.java
-  private static void insertRecord() throws StatementExecutionException, IoTDBConnectionException {
-    String deviceId = "root.sg1.d1";
-    List<String> measurements = new ArrayList<>();
-    List<TSDataType> types = new ArrayList<>();
-    measurements.add("s1");
-    measurements.add("s2");
-    measurements.add("s3");
-    types.add(TSDataType.INT64);
-    types.add(TSDataType.INT64);
-    types.add(TSDataType.INT64);
-
-    for (long time = 0; time < 10; time++) {
+  private static void insertRecords() throws StatementExecutionException, IoTDBConnectionException {
+    long time = System.currentTimeMillis();
+    List<String> deviceIds = new ArrayList<>();
+    List<Long> times = new ArrayList<>();
+    List<List<String>> measurementsList = new ArrayList<>();
+    List<List<TSDataType>> typesList = new ArrayList<>();
+    List<List<Object>> valuesList = new ArrayList<>();
+    for (int j = 0; j < ROW_NUMBER; j++) {
+      String deviceId = "root.test.g_0.d_" + r.nextInt(DEVICE_NUMBER);
+      deviceIds.add(deviceId);
+      times.add(time);
       List<Object> values = new ArrayList<>();
-      values.add(1L);
-      values.add(2L);
-      values.add(3L);
-      sessionPool.insertRecord(deviceId, time, measurements, types, values);
+      for (int i = 0; i < SENSOR_NUMBER; i++) {
+        values.add(r.nextFloat());
+      }
+      valuesList.add(values);
+      measurementsList.add(measurements);
+      typesList.add(types);
     }
+
+    sessionPool.insertAlignedRecords(deviceIds, times, measurementsList, typesList, valuesList);
   }
 
-  private static void queryByRowRecord() {
-    for (int i = 0; i < 1; i++) {
-      service.submit(
-          () -> {
-            SessionDataSetWrapper wrapper = null;
-            try {
-              wrapper = sessionPool.executeQueryStatement("select * from root.sg1.d1");
-              System.out.println(wrapper.getColumnNames());
-              System.out.println(wrapper.getColumnTypes());
-              while (wrapper.hasNext()) {
-                System.out.println(wrapper.next());
-              }
-            } catch (IoTDBConnectionException | StatementExecutionException e) {
-              e.printStackTrace();
-            } finally {
-              // remember to close data set finally!
-              sessionPool.closeResultSet(wrapper);
-            }
-          });
-    }
-  }
-
-  private static void queryByIterator() {
-    for (int i = 0; i < 1; i++) {
-      service.submit(
-          () -> {
-            SessionDataSetWrapper wrapper = null;
-            try {
-              wrapper = sessionPool.executeQueryStatement("select * from root.sg1.d1");
-              // get DataIterator like JDBC
-              DataIterator dataIterator = wrapper.iterator();
-              System.out.println(wrapper.getColumnNames());
-              System.out.println(wrapper.getColumnTypes());
-              while (dataIterator.next()) {
-                StringBuilder builder = new StringBuilder();
-                for (String columnName : wrapper.getColumnNames()) {
-                  builder.append(dataIterator.getString(columnName) + " ");
-                }
-                System.out.println(builder);
-              }
-            } catch (IoTDBConnectionException | StatementExecutionException e) {
-              e.printStackTrace();
-            } finally {
-              // remember to close data set finally!
-              sessionPool.closeResultSet(wrapper);
-            }
-          });
+  private static void queryByIterator()
+      throws IoTDBConnectionException, StatementExecutionException {
+    SessionDataSetWrapper wrapper = null;
+    int device = r.nextInt(DEVICE_NUMBER);
+    try {
+      long startTime = System.currentTimeMillis();
+      String sql = "select last(*) from root.test.g_0.d_" + device;
+      wrapper = sessionPool.executeQueryStatement(sql);
+      // get DataIterator like JDBC
+      DataIterator dataIterator = wrapper.iterator();
+      //              System.out.println(wrapper.getColumnNames());
+      //              System.out.println(wrapper.getColumnTypes());
+      while (dataIterator.next()) {
+        //                StringBuilder builder = new StringBuilder();
+        for (String columnName : wrapper.getColumnNames()) {
+          dataIterator.getString(columnName);
+        }
+        //                System.out.println(builder);
+      }
+      long cost = System.currentTimeMillis() - startTime;
+      LOGGER.info("Query data of d_" + device + "cost:" + cost + "ms");
+    } finally {
+      // remember to close data set finally!
+      sessionPool.closeResultSet(wrapper);
     }
   }
 }
