@@ -26,10 +26,13 @@ import com.github.luben.zstd.Zstd;
 import net.jpountz.lz4.LZ4Compressor;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.lz4.LZ4SafeDecompressor;
+import org.apache.commons.compress.compressors.lzma.LZMACompressorInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xerial.snappy.Snappy;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
@@ -354,6 +357,65 @@ public interface IUnCompressor {
     @Override
     public CompressionType getCodecName() {
       return CompressionType.ZSTD;
+    }
+  }
+
+  class LzmaUnCompressor implements IUnCompressor {
+
+    @Override
+    public int getUncompressedLength(byte[] array, int offset, int length) throws IOException {
+      throw new UnsupportedOperationException("unsupported get uncompress length");
+    }
+
+    @Override
+    public int getUncompressedLength(ByteBuffer buffer) throws IOException {
+      throw new UnsupportedOperationException("unsupported get uncompress length");
+    }
+
+    @Override
+    public byte[] uncompress(byte[] byteArray) throws IOException {
+      ByteArrayInputStream inputStream = new ByteArrayInputStream(byteArray);
+      LZMACompressorInputStream lzmaInputStream = new LZMACompressorInputStream(inputStream);
+      ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+
+      byte[] buffer = new byte[1024];
+      int bytesRead;
+      while ((bytesRead = lzmaInputStream.read(buffer)) != -1) {
+        outputStream.write(buffer, 0, bytesRead);
+      }
+
+      lzmaInputStream.close();
+      outputStream.close();
+      inputStream.close();
+
+      return outputStream.toByteArray();
+    }
+
+    @Override
+    public int uncompress(byte[] byteArray, int offset, int length, byte[] output, int outOffset)
+        throws IOException {
+      byte[] dataBefore = new byte[length];
+      System.arraycopy(byteArray, offset, dataBefore, 0, length);
+      byte[] res = this.uncompress(dataBefore);
+      System.arraycopy(res, 0, output, outOffset, res.length);
+      return res.length;
+    }
+
+    @Override
+    public int uncompress(ByteBuffer compressed, ByteBuffer uncompressed) throws IOException {
+      int length = compressed.remaining();
+      byte[] dataBefore = new byte[length];
+      compressed.get(dataBefore, 0, length);
+
+      byte[] res = this.uncompress(dataBefore);
+      uncompressed.put(res);
+
+      return res.length;
+    }
+
+    @Override
+    public CompressionType getCodecName() {
+      return CompressionType.LZMA;
     }
   }
 }

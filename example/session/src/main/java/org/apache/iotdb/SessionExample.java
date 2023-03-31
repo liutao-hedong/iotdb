@@ -26,7 +26,6 @@ import org.apache.iotdb.isession.template.Template;
 import org.apache.iotdb.isession.util.Version;
 import org.apache.iotdb.rpc.IoTDBConnectionException;
 import org.apache.iotdb.rpc.StatementExecutionException;
-import org.apache.iotdb.rpc.TSStatusCode;
 import org.apache.iotdb.session.Session;
 import org.apache.iotdb.session.template.MeasurementNode;
 import org.apache.iotdb.tsfile.file.metadata.enums.CompressionType;
@@ -70,51 +69,8 @@ public class SessionExample {
             .version(Version.V_1_0)
             .build();
     session.open(false);
-
-    // set session fetchSize
-    session.setFetchSize(10000);
-
-    try {
-      session.createDatabase("root.sg1");
-    } catch (StatementExecutionException e) {
-      if (e.getStatusCode() != TSStatusCode.DATABASE_ALREADY_EXISTS.getStatusCode()) {
-        throw e;
-      }
-    }
-
-    //     createTemplate();
-    createTimeseries();
-    createMultiTimeseries();
-    insertRecord();
     insertTablet();
-    //    insertTabletWithNullValues();
-    //    insertTablets();
-    //    insertRecords();
-    //    insertText();
-    //    selectInto();
-    //    createAndDropContinuousQueries();
-    //    nonQuery();
-    query();
-    //    queryWithTimeout();
-    rawDataQuery();
-    lastDataQuery();
-    aggregationQuery();
-    groupByQuery();
-    //    queryByIterator();
-    //    deleteData();
-    //    deleteTimeseries();
-    //    setTimeout();
 
-    sessionEnableRedirect = new Session(LOCAL_HOST, 6667, "root", "root");
-    sessionEnableRedirect.setEnableQueryRedirection(true);
-    sessionEnableRedirect.open(false);
-
-    // set session fetchSize
-    sessionEnableRedirect.setFetchSize(10000);
-
-    insertRecord4Redirect();
-    query4Redirect();
-    sessionEnableRedirect.close();
     session.close();
   }
 
@@ -386,57 +342,44 @@ public class SessionExample {
      */
     // The schema of measurements of one device
     // only measurementId and data type in MeasurementSchema take effects in Tablet
+    long startTime = System.currentTimeMillis();
     List<MeasurementSchema> schemaList = new ArrayList<>();
-    schemaList.add(new MeasurementSchema("s1", TSDataType.INT64));
-    schemaList.add(new MeasurementSchema("s2", TSDataType.INT64));
-    schemaList.add(new MeasurementSchema("s3", TSDataType.INT64));
+    for (int i = 1; i <= 100; i++) {
+      schemaList.add(
+          new MeasurementSchema(
+              "s" + i, TSDataType.INT64, TSEncoding.PLAIN, CompressionType.SNAPPY));
+    }
+    Random random = new Random();
+    for (int i = 1; i <= 1000; i++) {
+      String device = "root.sg.d" + i;
+      Tablet tablet = new Tablet(device, schemaList, 100);
+      // Method 1 to add tablet data
+      long timestamp = System.currentTimeMillis();
 
-    Tablet tablet = new Tablet(ROOT_SG1_D1, schemaList, 100);
-
-    // Method 1 to add tablet data
-    long timestamp = System.currentTimeMillis();
-
-    for (long row = 0; row < 100; row++) {
-      int rowIndex = tablet.rowSize++;
-      tablet.addTimestamp(rowIndex, timestamp);
-      for (int s = 0; s < 3; s++) {
-        long value = new Random().nextLong();
-        tablet.addValue(schemaList.get(s).getMeasurementId(), rowIndex, value);
+      for (long row = 0; row < 10000; row++) {
+        int rowIndex = tablet.rowSize++;
+        tablet.addTimestamp(rowIndex, timestamp);
+        for (int s = 0; s < 100; s++) {
+          long value = Math.abs(random.nextLong() % 1000);
+          tablet.addValue(schemaList.get(s).getMeasurementId(), rowIndex, value);
+        }
+        if (tablet.rowSize == tablet.getMaxRowNumber()) {
+          session.insertTablet(tablet, true);
+          tablet.reset();
+        }
+        timestamp++;
       }
-      if (tablet.rowSize == tablet.getMaxRowNumber()) {
-        session.insertTablet(tablet, true);
+
+      if (tablet.rowSize != 0) {
+        session.insertTablet(tablet);
         tablet.reset();
       }
-      timestamp++;
+      System.out.println(i);
     }
-
-    if (tablet.rowSize != 0) {
-      session.insertTablet(tablet);
-      tablet.reset();
-    }
-
-    // Method 2 to add tablet data
-    long[] timestamps = tablet.timestamps;
-    Object[] values = tablet.values;
-
-    for (long time = 0; time < 100; time++) {
-      int row = tablet.rowSize++;
-      timestamps[row] = time;
-      for (int i = 0; i < 3; i++) {
-        long[] sensor = (long[]) values[i];
-        sensor[row] = i;
-      }
-      if (tablet.rowSize == tablet.getMaxRowNumber()) {
-        session.insertTablet(tablet, true);
-        tablet.reset();
-      }
-    }
-
-    if (tablet.rowSize != 0) {
-      session.insertTablet(tablet);
-      tablet.reset();
-    }
+    System.out.println("Time Cost: " + (System.currentTimeMillis() - startTime));
   }
+
+  public static String getRandomString() {}
 
   private static void insertTabletWithNullValues()
       throws IoTDBConnectionException, StatementExecutionException {

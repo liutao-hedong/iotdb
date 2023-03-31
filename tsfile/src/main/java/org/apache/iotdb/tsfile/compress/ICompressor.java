@@ -21,11 +21,13 @@ package org.apache.iotdb.tsfile.compress;
 
 import org.apache.iotdb.tsfile.exception.compress.CompressionTypeNotSupportedException;
 import org.apache.iotdb.tsfile.exception.compress.GZIPCompressOverflowException;
+import org.apache.iotdb.tsfile.exception.compress.LZMACompressOverflowException;
 import org.apache.iotdb.tsfile.file.metadata.enums.CompressionType;
 
 import com.github.luben.zstd.Zstd;
 import net.jpountz.lz4.LZ4Compressor;
 import net.jpountz.lz4.LZ4Factory;
+import org.apache.commons.compress.compressors.lzma.LZMACompressorOutputStream;
 import org.xerial.snappy.Snappy;
 
 import java.io.ByteArrayInputStream;
@@ -38,6 +40,7 @@ import java.util.zip.GZIPOutputStream;
 
 import static org.apache.iotdb.tsfile.file.metadata.enums.CompressionType.GZIP;
 import static org.apache.iotdb.tsfile.file.metadata.enums.CompressionType.LZ4;
+import static org.apache.iotdb.tsfile.file.metadata.enums.CompressionType.LZMA;
 import static org.apache.iotdb.tsfile.file.metadata.enums.CompressionType.SNAPPY;
 import static org.apache.iotdb.tsfile.file.metadata.enums.CompressionType.ZSTD;
 
@@ -69,6 +72,8 @@ public interface ICompressor extends Serializable {
         return new GZIPCompressor();
       case ZSTD:
         return new ZstdCompressor();
+      case LZMA:
+        return new LzmaCompression();
       default:
         throw new CompressionTypeNotSupportedException(name.toString());
     }
@@ -368,6 +373,69 @@ public interface ICompressor extends Serializable {
     @Override
     public CompressionType getType() {
       return ZSTD;
+    }
+  }
+
+  class LzmaCompression implements ICompressor {
+
+    @Override
+    public byte[] compress(byte[] data) throws IOException {
+      ByteArrayInputStream inputStream = new ByteArrayInputStream(data);
+      ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+      LZMACompressorOutputStream lzmaOutputStream = new LZMACompressorOutputStream(outputStream);
+
+      byte[] buffer = new byte[1024];
+      int bytesRead;
+      while ((bytesRead = inputStream.read(buffer)) != -1) {
+        lzmaOutputStream.write(buffer, 0, bytesRead);
+      }
+
+      lzmaOutputStream.close();
+      outputStream.close();
+      inputStream.close();
+      return outputStream.toByteArray();
+    }
+
+    @Override
+    public byte[] compress(byte[] data, int offset, int length) throws IOException {
+      byte[] dataBefore = new byte[length];
+      System.arraycopy(data, offset, dataBefore, 0, length);
+      return this.compress(dataBefore);
+    }
+
+    @Override
+    public int compress(byte[] data, int offset, int length, byte[] compressed) throws IOException {
+      byte[] dataBefore = new byte[length];
+      System.arraycopy(data, offset, dataBefore, 0, length);
+      byte[] res = this.compress(dataBefore);
+      if (res.length > compressed.length) {
+        throw new LZMACompressOverflowException();
+      }
+      System.arraycopy(res, 0, compressed, 0, res.length);
+      return res.length;
+    }
+
+    @Override
+    public int compress(ByteBuffer data, ByteBuffer compressed) throws IOException {
+      int length = data.remaining();
+      byte[] dataBefore = new byte[length];
+      data.get(dataBefore, 0, length);
+      byte[] res = this.compress(dataBefore);
+      if (res.length > compressed.capacity()) {
+        throw new LZMACompressOverflowException();
+      }
+      compressed.put(res);
+      return res.length;
+    }
+
+    @Override
+    public int getMaxBytesForCompression(int uncompressedDataSize) {
+      return uncompressedDataSize + 1024 * 4;
+    }
+
+    @Override
+    public CompressionType getType() {
+      return LZMA;
     }
   }
 }
