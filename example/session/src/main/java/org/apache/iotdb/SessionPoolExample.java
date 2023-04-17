@@ -34,7 +34,6 @@ import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class SessionPoolExample {
 
@@ -55,8 +54,6 @@ public class SessionPoolExample {
   private static List<TSDataType> types;
 
   private static AtomicInteger totalRowNumber = new AtomicInteger();
-
-  private static AtomicLong insertTime = new AtomicLong();
 
   private static Random r;
 
@@ -84,11 +81,17 @@ public class SessionPoolExample {
     protected CountDownLatch latch;
     protected long currentTimestamp;
 
+    protected int count;
+
+    protected SyncWriteSignal(int count) {
+      this.count = count;
+    }
+
     protected void syncCountDownBeforeInsert() {
       if (needResetLatch) {
         synchronized (this) {
           if (needResetLatch) {
-            latch = new CountDownLatch(THREAD_NUMBER);
+            latch = new CountDownLatch(this.count);
             needResetLatch = false;
             currentTimestamp = System.currentTimeMillis();
           }
@@ -128,7 +131,7 @@ public class SessionPoolExample {
       for (int j = 0; j < TOTAL_BATCH_COUNT_PER_DEVICE; j++) {
         signal.syncCountDownBeforeInsert();
         try {
-          int insertDeviceCount = insertRecords(index);
+          int insertDeviceCount = insertRecords(index, signal.currentTimestamp);
           totalRowNumber.addAndGet(insertDeviceCount);
           signal.finishInsert();
           signal.waitCurrentLoopFinished();
@@ -152,7 +155,7 @@ public class SessionPoolExample {
 
     Thread[] threads = new Thread[THREAD_NUMBER];
 
-    SyncWriteSignal signal = new SyncWriteSignal();
+    SyncWriteSignal signal = new SyncWriteSignal(THREAD_NUMBER);
     for (int i = 0; i < THREAD_NUMBER; i++) {
       threads[i] = new Thread(new InsertWorker(signal, i));
     }
@@ -213,9 +216,8 @@ public class SessionPoolExample {
   }
 
   // more insert example, see SessionExample.java
-  private static int insertRecords(int threadIndex)
+  private static int insertRecords(int threadIndex, long timestamp)
       throws StatementExecutionException, IoTDBConnectionException {
-    long time = insertTime.get();
     List<String> deviceIds = new ArrayList<>();
     List<Long> times = new ArrayList<>();
     List<List<String>> measurementsList = new ArrayList<>();
@@ -225,7 +227,7 @@ public class SessionPoolExample {
     for (int j = threadIndex; j < DEVICE_NUMBER; j += THREAD_NUMBER) {
       String deviceId = "root.test.g_0.d_" + j;
       deviceIds.add(deviceId);
-      times.add(time);
+      times.add(timestamp);
       List<Object> values = new ArrayList<>();
       for (int i = 0; i < SENSOR_NUMBER; i++) {
         values.add(r.nextFloat());
