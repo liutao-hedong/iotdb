@@ -103,11 +103,12 @@ public class ReadTest {
       }
     }
 
-    protected void finishRead(long cost) throws InterruptedException {
+    protected void finishReadAndWait(long cost) throws InterruptedException {
+      CountDownLatch currentLatch = latch;
       totalCost += cost;
       synchronized (this) {
-        latch.countDown();
-        if (latch.getCount() == 0) {
+        currentLatch.countDown();
+        if (currentLatch.getCount() == 0) {
           needResetLatch = true;
           long totalCost = (System.nanoTime() - currentTimestamp);
           LOGGER.info(
@@ -122,10 +123,7 @@ public class ReadTest {
           }
         }
       }
-    }
-
-    protected void waitCurrentLoopFinished() throws InterruptedException {
-      latch.await();
+      currentLatch.await();
     }
   }
 
@@ -205,8 +203,7 @@ public class ReadTest {
           long startTime = System.nanoTime();
           executeQuery();
           long cost = System.nanoTime() - startTime;
-          signal.finishRead(cost);
-          signal.waitCurrentLoopFinished();
+          signal.finishReadAndWait(cost);
         } catch (InterruptedException | IoTDBConnectionException | StatementExecutionException e) {
           throw new RuntimeException(e);
         }

@@ -97,10 +97,11 @@ public class WriterTest {
       }
     }
 
-    protected void finishInsert() {
+    protected void finishInsertAndWait() throws InterruptedException {
+      CountDownLatch currentLatch = latch;
       synchronized (this) {
-        latch.countDown();
-        if (latch.getCount() == 0) {
+        currentLatch.countDown();
+        if (currentLatch.getCount() == 0) {
           needResetLatch = true;
           LOGGER.info(
               "one loop finished. cost: {}ms. total rows: {}",
@@ -108,10 +109,7 @@ public class WriterTest {
               totalRowNumber.get());
         }
       }
-    }
-
-    protected void waitCurrentLoopFinished() throws InterruptedException {
-      latch.await();
+      currentLatch.await();
     }
   }
 
@@ -131,12 +129,12 @@ public class WriterTest {
         try {
           int insertDeviceCount = insertRecords(index, signal.currentTimestamp);
           totalRowNumber.addAndGet(insertDeviceCount);
-          signal.finishInsert();
-          signal.waitCurrentLoopFinished();
+          signal.finishInsertAndWait();
         } catch (Exception e) {
           LOGGER.error("insert error. Thread: {}. Error:", index, e);
         }
       }
+      LOGGER.info("insert worker finished");
     }
   }
 
