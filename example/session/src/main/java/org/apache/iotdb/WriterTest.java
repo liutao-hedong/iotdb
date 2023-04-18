@@ -18,8 +18,6 @@
  */
 package org.apache.iotdb;
 
-import org.apache.iotdb.isession.SessionDataSet.DataIterator;
-import org.apache.iotdb.isession.pool.SessionDataSetWrapper;
 import org.apache.iotdb.rpc.IoTDBConnectionException;
 import org.apache.iotdb.rpc.StatementExecutionException;
 import org.apache.iotdb.session.pool.SessionPool;
@@ -35,11 +33,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class SessionPoolExample {
+public class WriterTest {
 
   private static SessionPool sessionPool;
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(SessionPoolExample.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(WriterTest.class);
 
   private static int THREAD_NUMBER = 300;
 
@@ -100,8 +98,9 @@ public class SessionPoolExample {
     }
 
     protected void finishInsert() {
-      if (latch.getCount() == 1) {
-        synchronized (this) {
+      synchronized (this) {
+        latch.countDown();
+        if (latch.getCount() == 0) {
           needResetLatch = true;
           LOGGER.info(
               "one loop finished. cost: {}ms. total rows: {}",
@@ -109,7 +108,6 @@ public class SessionPoolExample {
               totalRowNumber.get());
         }
       }
-      latch.countDown();
     }
 
     protected void waitCurrentLoopFinished() throws InterruptedException {
@@ -160,22 +158,6 @@ public class SessionPoolExample {
       threads[i] = new Thread(new InsertWorker(signal, i));
     }
 
-    // initialize read thread
-    Thread[] readThreads = new Thread[THREAD_NUMBER];
-    for (int i = 0; i < THREAD_NUMBER; i++) {
-      readThreads[i] =
-          new Thread(
-              () -> {
-                for (int j = 0; j < TOTAL_BATCH_COUNT_PER_DEVICE; j++) {
-                  try {
-                    queryByIterator();
-                  } catch (Exception e) {
-                    LOGGER.error("query error:", e);
-                  }
-                }
-              });
-    }
-
     // count total execution time
     r = new Random();
     long startTime = System.currentTimeMillis();
@@ -191,11 +173,6 @@ public class SessionPoolExample {
     for (Thread thread : threads) {
       thread.start();
     }
-
-    // start read
-    //    for (Thread thread : readThreads) {
-    //      thread.start();
-    //    }
 
     long startTime1 = System.nanoTime();
     new Thread(
@@ -240,32 +217,5 @@ public class SessionPoolExample {
 
     sessionPool.insertAlignedRecords(deviceIds, times, measurementsList, typesList, valuesList);
     return deviceCount;
-  }
-
-  private static void queryByIterator()
-      throws IoTDBConnectionException, StatementExecutionException {
-    SessionDataSetWrapper wrapper = null;
-    int device = r.nextInt(DEVICE_NUMBER);
-    try {
-      long startTime = System.currentTimeMillis();
-      String sql = "select last(*) from root.test.g_0.d_" + device;
-      wrapper = sessionPool.executeQueryStatement(sql);
-      // get DataIterator like JDBC
-      DataIterator dataIterator = wrapper.iterator();
-      //              System.out.println(wrapper.getColumnNames());
-      //              System.out.println(wrapper.getColumnTypes());
-      while (dataIterator.next()) {
-        //                StringBuilder builder = new StringBuilder();
-        for (String columnName : wrapper.getColumnNames()) {
-          dataIterator.getString(columnName);
-        }
-        //                System.out.println(builder);
-      }
-      long cost = System.currentTimeMillis() - startTime;
-      LOGGER.info("Query data of d_" + device + "cost:" + cost + "ms");
-    } finally {
-      // remember to close data set finally!
-      sessionPool.closeResultSet(wrapper);
-    }
   }
 }
