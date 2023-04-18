@@ -210,7 +210,11 @@ public class ReadTest {
           long cost = System.nanoTime() - startTime;
           signal.finishReadAndWait(cost, i);
         } catch (InterruptedException | IoTDBConnectionException | StatementExecutionException e) {
-          throw new RuntimeException(e);
+          try {
+            signal.finishReadAndWait(10_000_000, i);
+          } catch (InterruptedException ignored) {
+
+          }
         }
       }
     }
@@ -221,22 +225,9 @@ public class ReadTest {
 
   private static void queryLastValue()
       throws IoTDBConnectionException, StatementExecutionException {
-    SessionDataSetWrapper wrapper = null;
     int device = r.nextInt(DEVICE_NUMBER);
-    try {
-      String sql = "select last(s_1) from root.test.g_0.d_" + device;
-      wrapper = sessionPool.executeQueryStatement(sql);
-      // get DataIterator like JDBC
-      DataIterator dataIterator = wrapper.iterator();
-      while (dataIterator.next()) {
-        for (String columnName : wrapper.getColumnNames()) {
-          dataIterator.getString(columnName);
-        }
-      }
-    } finally {
-      // remember to close data set finally!
-      sessionPool.closeResultSet(wrapper);
-    }
+    String sql = "select last(s_1) from root.test.g_0.d_" + device;
+    executeQuery(sql);
   }
 
   private static void queryRawValue() throws IoTDBConnectionException, StatementExecutionException {
@@ -268,7 +259,9 @@ public class ReadTest {
       }
     } finally {
       // remember to close data set finally!
-      sessionPool.closeResultSet(wrapper);
+      if (wrapper != null) {
+        sessionPool.closeResultSet(wrapper);
+      }
     }
   }
 }
