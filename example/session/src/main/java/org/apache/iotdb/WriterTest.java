@@ -53,6 +53,8 @@ public class WriterTest {
 
   private static AtomicInteger totalRowNumber = new AtomicInteger();
 
+  private static float[] floatData = new float[10000];
+
   private static Random r;
 
   /** Build a custom SessionPool for this example */
@@ -151,6 +153,12 @@ public class WriterTest {
       types.add(TSDataType.FLOAT);
     }
 
+    r = new Random();
+
+    for (int i = 0; i < floatData.length; i++) {
+      floatData[i] = r.nextFloat();
+    }
+
     Thread[] threads = new Thread[THREAD_NUMBER];
 
     SyncWriteSignal signal = new SyncWriteSignal(THREAD_NUMBER);
@@ -159,7 +167,6 @@ public class WriterTest {
     }
 
     // count total execution time
-    r = new Random();
     long startTime = System.currentTimeMillis();
     Runtime.getRuntime()
         .addShutdownHook(
@@ -207,7 +214,7 @@ public class WriterTest {
       times.add(timestamp);
       List<Object> values = new ArrayList<>();
       for (int i = 0; i < SENSOR_NUMBER; i++) {
-        values.add(r.nextFloat());
+        values.add(floatData[(int) ((i + j + timestamp) % floatData.length)]);
       }
       valuesList.add(values);
       measurementsList.add(measurements);
