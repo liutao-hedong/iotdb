@@ -108,7 +108,7 @@ public class WriterTest {
               loopIndex,
               (System.currentTimeMillis() - currentTimestamp),
               totalRowNumber.get(),
-              totalRowNumber.get() * SENSOR_NUMBER);
+              (long) totalRowNumber.get() * SENSOR_NUMBER);
         }
       }
       currentLatch.await();
