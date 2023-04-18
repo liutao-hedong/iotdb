@@ -45,7 +45,7 @@ public class WriterTest {
 
   private static int SENSOR_NUMBER = 500;
 
-  private static int TOTAL_BATCH_COUNT_PER_DEVICE = 100;
+  private static int WRITE_LOOP = 100000;
 
   private static List<String> measurements;
 
@@ -126,7 +126,7 @@ public class WriterTest {
 
     @Override
     public void run() {
-      for (int j = 0; j < TOTAL_BATCH_COUNT_PER_DEVICE; j++) {
+      for (int j = 0; j < WRITE_LOOP; j++) {
         signal.syncCountDownBeforeInsert();
         try {
           int insertDeviceCount = insertRecords(index, signal.currentTimestamp);
