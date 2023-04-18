@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -78,14 +79,15 @@ public class WriterTest {
     protected volatile boolean needResetLatch = true;
     protected CountDownLatch latch;
     protected long currentTimestamp;
-
+    protected Semaphore semaphore;
     protected int count;
 
     protected SyncWriteSignal(int count) {
       this.count = count;
+      this.semaphore = new Semaphore(20);
     }
 
-    protected void syncCountDownBeforeInsert() {
+    protected void syncCountDownBeforeInsert() throws InterruptedException {
       if (needResetLatch) {
         synchronized (this) {
           if (needResetLatch) {
@@ -95,9 +97,11 @@ public class WriterTest {
           }
         }
       }
+      semaphore.acquire();
     }
 
     protected void finishInsertAndWait(int loopIndex) throws InterruptedException {
+      semaphore.release();
       CountDownLatch currentLatch = latch;
       synchronized (this) {
         currentLatch.countDown();
@@ -127,8 +131,8 @@ public class WriterTest {
     @Override
     public void run() {
       for (int j = 0; j < WRITE_LOOP; j++) {
-        signal.syncCountDownBeforeInsert();
         try {
+          signal.syncCountDownBeforeInsert();
           int insertDeviceCount = insertRecords(index, signal.currentTimestamp);
           totalRowNumber.addAndGet(insertDeviceCount);
           signal.finishInsertAndWait(j);
