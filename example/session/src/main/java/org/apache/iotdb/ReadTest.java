@@ -103,7 +103,7 @@ public class ReadTest {
       }
     }
 
-    protected void finishReadAndWait(long cost) throws InterruptedException {
+    protected void finishReadAndWait(long cost, int loopIndex) throws InterruptedException {
       CountDownLatch currentLatch = latch;
       totalCost += cost;
       synchronized (this) {
@@ -113,8 +113,9 @@ public class ReadTest {
           long totalCost = (System.nanoTime() - currentTimestamp);
           LOGGER.info(
               String.format(
-                  "[%s] finished with %d thread. AVG COST: %.3fms. TOTAL COST: %.3fms",
+                  "[%s][%d] finished with %d thread. AVG COST: %.3fms. TOTAL COST: %.3fms",
                   this.queryName,
+                  loopIndex,
                   this.count,
                   this.totalCost * 1.0 / this.count / 1_000_000,
                   totalCost * 1.0 / 1_000_000));
@@ -203,7 +204,7 @@ public class ReadTest {
           long startTime = System.nanoTime();
           executeQuery();
           long cost = System.nanoTime() - startTime;
-          signal.finishReadAndWait(cost);
+          signal.finishReadAndWait(cost, i);
         } catch (InterruptedException | IoTDBConnectionException | StatementExecutionException e) {
           throw new RuntimeException(e);
         }
