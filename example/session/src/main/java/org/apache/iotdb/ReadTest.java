@@ -40,7 +40,7 @@ public class ReadTest {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(ReadTest.class);
 
-  private static int THREAD_NUMBER = 2;
+  private static int THREAD_NUMBER = 100;
 
   private static int DEVICE_NUMBER = 20000;
 
