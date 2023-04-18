@@ -203,15 +203,17 @@ public class ReadTest {
     @Override
     public void run() {
       for (int i = 0; i < READ_LOOP; i++) {
+        long cost = 10_000_000L;
+        signal.syncCountDownBeforeRead();
         try {
-          signal.syncCountDownBeforeRead();
           long startTime = System.nanoTime();
           executeQuery();
-          long cost = System.nanoTime() - startTime;
-          signal.finishReadAndWait(cost, i);
-        } catch (InterruptedException | IoTDBConnectionException | StatementExecutionException e) {
+          cost = System.nanoTime() - startTime;
+        } catch (IoTDBConnectionException | StatementExecutionException ignored) {
+
+        } finally {
           try {
-            signal.finishReadAndWait(10_000_000, i);
+            signal.finishReadAndWait(cost, i);
           } catch (InterruptedException ignored) {
 
           }
