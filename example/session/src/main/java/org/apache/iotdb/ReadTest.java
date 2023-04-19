@@ -209,13 +209,13 @@ public class ReadTest {
           long startTime = System.nanoTime();
           executeQuery();
           cost = System.nanoTime() - startTime;
-        } catch (IoTDBConnectionException | StatementExecutionException ignored) {
-
+        } catch (Throwable t) {
+          LOGGER.error("error when execute query.", t);
         } finally {
           try {
             signal.finishReadAndWait(cost, i);
-          } catch (InterruptedException ignored) {
-
+          } catch (InterruptedException e) {
+            LOGGER.error("error when finish signal.", e);
           }
         }
       }
