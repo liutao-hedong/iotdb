@@ -46,7 +46,7 @@ class LRUCacheEntryManager<FK, SK, V>
 
   @Override
   public void access(LRUCacheEntry<SK, V> cacheEntry) {
-    getBelongedList(cacheEntry).moveToHead(cacheEntry);
+    // getBelongedList(cacheEntry).moveToHead(cacheEntry);
   }
 
   @Override
