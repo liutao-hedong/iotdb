@@ -68,7 +68,7 @@ mvn clean install -pl session -am -Dmaven.test.skip=true
 
 ``` java
 // 全部使用默认配置
-session = new Session.Builder.build();
+session = new Session.Builder().build();
 
 // 指定一个可连接节点
 session = 
